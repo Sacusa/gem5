@@ -45,6 +45,7 @@
 
 #include "base/statistics.hh"
 #include "base/stats/text.hh"
+#include "base/stats/sql.hh"
 #if USE_HDF5
 #include "base/stats/hdf5.hh"
 #endif
@@ -57,10 +58,10 @@ namespace py = pybind11;
 namespace Stats {
 
 void
-pythonDump()
+pythonDump(const std::string& msg)
 {
     py::module m = py::module::import("m5.stats");
-    m.attr("dump")();
+    m.attr("dump")(msg);
 }
 
 void
@@ -80,6 +81,7 @@ pybind_init_stats(py::module &m_native)
     m
         .def("initSimStats", &Stats::initSimStats)
         .def("initText", &Stats::initText, py::return_value_policy::reference)
+        .def("initOutputSQL", &Stats::initOutputSQL, py::return_value_policy::reference)
 #if USE_HDF5
         .def("initHDF5", &Stats::initHDF5)
 #endif

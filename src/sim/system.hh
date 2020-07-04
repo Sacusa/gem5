@@ -64,10 +64,12 @@
 #include "sim/se_signal.hh"
 #include "sim/sim_object.hh"
 #include "sim/workload.hh"
+#include "aladdin/gem5/aladdin_sys_connection.h"
 
 class BaseRemoteGDB;
 class KvmVM;
 class ThreadContext;
+class Gem5Datapath;
 
 class System : public SimObject, public PCEventScope
 {
@@ -196,6 +198,57 @@ class System : public SimObject, public PCEventScope
     bool remove(PCEvent *event) override;
 
     unsigned numContexts() const { return threadContexts.size(); }
+
+    /* Maps an accelerator id to a Gem5Datapath object. The id can be an IOCTL
+     * request code. When gem5 intercepts the ioctl syscall, it will schedule
+     * the accelerator given by the request code for execution. The size of the
+     * map is the number of executing accelerators.
+     */
+    std::map<int, Gem5Datapath*> accelerators;
+
+    /* Returns the number of accelerators that are currently registered and
+     * running in the system.
+     */
+    int numRunningAccelerators() { return accelerators.size(); }
+
+    /* Check if the accelerator exists. */
+    void checkAcceleratorExists(int id, const std::string& funcName);
+
+    /* Registers the datapath pointer and list of dependencies with the system.
+     * If the accelerator already exists, the simulation ends with a fatal
+     * message.
+     */
+    void registerAccelerator(int id, Gem5Datapath* accelerator);
+
+    /* Marks an accelerator as finished by erasing it from the registered list.
+     */
+    void deregisterAccelerator(int id);
+
+    /* Activates an accelerator with the provided parameters. */
+    void activateAccelerator(unsigned accel_id,
+                             Addr finish_flag,
+                             std::unique_ptr<uint8_t[]>
+                                 accel_params,
+                             int context_id,
+                             int thread_id);
+
+    /* Add an address tranlation into the datapath TLB for the specified array.
+     */
+    void insertAddressTranslationMapping(int id,
+                                         Addr sim_vaddr,
+                                         Addr sim_paddr);
+
+    /* Add an mapping between array names to the simulated virtual addresses. */
+    void insertArrayLabelMapping(int id, std::string array_label,
+                                 Addr sim_vaddr, size_t size);
+
+    /* Set memory access type for an array. */
+    void setArrayMemoryType(int id, std::string array_label,
+                            MemoryType mem_type);
+
+    /* Get the base trace address of of the array for the specified accelerator.
+     */
+    Addr getArrayBaseAddress(int id, const char* array_name);
 
     /** Return number of running (non-halted) thread contexts in
      * system.  These threads could be Active or Suspended. */

@@ -1076,6 +1076,12 @@ class Packet : public Printable
         flags.set(DYNAMIC_DATA);
     }
 
+    bool
+    isDataSet()
+    {
+        return flags.isSet(STATIC_DATA|DYNAMIC_DATA);
+    }
+
     /**
      * get a pointer to the data ptr.
      */

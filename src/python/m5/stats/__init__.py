@@ -47,11 +47,20 @@ from m5.objects import Root
 from m5.params import isNullPointer
 from m5.util import attrdict, fatal
 
+# Global variable to determine if statistics output is enabled
+STATS_OUTPUT_ENABLED = False
+
+outputList = []
+
+def initText(filename, desc=True):
+    output = _m5.stats.initText(filename, desc)
+    outputList.append(output)
+    global STATS_OUTPUT_ENABLED
+    STATS_OUTPUT_ENABLED = True
+
 # Stat exports
 from _m5.stats import schedStatEvent as schedEvent
 from _m5.stats import periodicStatDump
-
-outputList = []
 
 # Dictionary of stat visitor factories populated by the _url_factory
 # visitor.
@@ -278,6 +287,34 @@ def _bindStatHierarchy(root):
     for name, obj in root._children.items():
         _bind_obj(name, obj)
 
+def initSQL(outputDirectory, filename):
+    """ Add the stats database as an output and add it to outputList.
+
+    Args:
+      outputDirectory: The directlry to store the database.
+      filename: The filename to which the stats are written.
+    """
+    # Take the supplied filename and prepend the output directory.
+    import os
+    filename = os.path.join(outputDirectory, filename)
+
+    output = _m5.stats.initOutputSQL(filename)
+    if output:
+        outputList.append(output)
+        global STATS_OUTPUT_ENABLED
+        STATS_OUTPUT_ENABLED = True
+        return True
+    else:
+        return False
+
+def stats_output_enabled():
+    """ Check that at least one statistics output format is enabled.
+
+    Return:
+      True if at least one output format is enabled, False otherwise
+    """
+    return STATS_OUTPUT_ENABLED
+
 names = []
 stats_dict = {}
 stats_list = []
@@ -351,7 +388,7 @@ def _dump_to_visitor(visitor, root=None):
 
 lastDump = 0
 
-def dump(root=None):
+def dump(stats_desc="", root=None):
     '''Dump all statistics data to the registered outputs'''
 
     now = m5.curTick()
@@ -376,7 +413,7 @@ def dump(root=None):
 
     for output in outputList:
         if output.valid():
-            output.begin()
+            output.begin(stats_desc)
             _dump_to_visitor(output, root=root)
             output.end()
 

@@ -91,7 +91,10 @@ class Text : public Output
 
     // Implement Output
     bool valid() const override;
-    void begin() override;
+    // @desc is a string that will be printed at the end of the
+    // beginning marker and is used to add helpful information about
+    // what this stat dump describes.
+    void begin(std::string desc="") override;
     void end() override;
 };
 

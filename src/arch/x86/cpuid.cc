@@ -67,8 +67,81 @@ namespace X86ISA {
         NumExtendedCpuidFuncs
     };
 
+    namespace CpuidCacheParams {
+        // Bit fields returned in EAX for leaf 4.
+
+        enum EAXCacheAttributes {
+            // Bits [4:0]
+            NoCache = 0x0,
+            DataCache = 0x1,
+            InstructionCache = 0x2,
+            UnifiedCache = 0x3,
+
+            SelfInitializing = 1 << 8,
+            FullyAssociative = 1 << 9,
+        };
+
+        enum EBXCacheAttributes {
+            WBInvNotActsOnLowerCaches = 0x1,
+            IsInclusiveCache = 0x2,
+            ComplexCacheIndexing = 0x4,
+        };
+
+        int getEAX(int subleaf) {
+            switch (subleaf) {
+                case 0:
+                    return DataCache | (1 << 5) | SelfInitializing;
+                case 1:
+                    return InstructionCache | (1 << 5) | SelfInitializing;
+                case 2:
+                    return UnifiedCache | (2 << 5) | SelfInitializing;
+                case 3:
+                    return UnifiedCache | (3 << 5) | SelfInitializing;
+                default:
+                    return NoCache;
+            }
+        }
+
+        int getEBX(int cacheSize, int cacheLineSize, int associativity) {
+            if (cacheSize == 0)
+                return 0;
+            unsigned cacheLineSizeField = (cacheLineSize - 1) & (0xfff);
+            unsigned physicalLinePartitions = (cacheSize / cacheLineSize) & \
+                                              (0x3ff);
+            int ebx = cacheLineSizeField | (physicalLinePartitions << 12) |
+                      ((associativity - 1) << 22);
+            return ebx;
+        }
+
+        int getECX(int cacheSize, int cacheLineSize, int associativity) {
+            if (cacheSize == 0)
+                return 0;
+            return (cacheSize / associativity / cacheLineSize) - 1;
+        }
+
+
+        int getEDX(int subleaf) {
+            // By default, all caches are mostly inclusive, propagate wb
+            // invalidates, and do not use complex hashing.
+            switch (subleaf) {
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    return IsInclusiveCache;
+                default:
+                    return 0;
+            }
+        }
+    }  // namespace CpuidCacheParams
+
     static const int vendorStringSize = 13;
+
+#ifdef USE_M5_CPUID_VENDOR_STRING
     static const char vendorString[vendorStringSize] = "M5 Simulator";
+#else
+    static const char vendorString[vendorStringSize] = "GenuineIntel";
+#endif
     static const int nameStringSize = 48;
     static const char nameString[nameStringSize] = "Fake M5 x86_64 CPU";
 
@@ -81,6 +154,41 @@ namespace X86ISA {
             reg |= str[pos];
         }
         return reg;
+    }
+
+    CpuidResult
+    getCacheParameters(ThreadContext* tc, int subleaf) {
+        using namespace CpuidCacheParams;
+
+        int eax = getEAX(subleaf);
+        int edx = getEDX(subleaf);
+        int ebx = 0, ecx = 0;
+        // TODO: For now, just encode the default parameters. We'll fix
+        // this up later.
+        unsigned cacheSize = 0, associativity = 0, cacheLineSize = 64;
+        switch (subleaf) {
+            case 0:
+            case 1:
+                cacheSize = 64 * 1024;
+                associativity = 2;
+                break;
+            case 2:
+                cacheSize = 2 * 1024 * 1024;
+                associativity = 8;
+                break;
+            case 3:
+                cacheSize = 16 * 1024 * 1024;
+                associativity = 16;
+                break;
+            default:
+                cacheSize = 0;
+                associativity = 1;
+                break;
+        }
+        ebx = getEBX(cacheSize, cacheLineSize, associativity);
+        ecx = getECX(cacheSize, cacheLineSize, associativity);
+
+        return CpuidResult(eax, ebx, edx, ecx);
     }
 
     bool
@@ -159,8 +267,14 @@ namespace X86ISA {
                         stringToRegister(vendorString + 8));
                 break;
               case FamilyModelStepping:
+                // gem5 has incomplete support for SSSE3 - in particular,
+                // several instructions (palign) used by strcmp_ssse3, which
+                // can cause code to take the wrong path.
                 result = CpuidResult(0x00020f51, 0x00000805,
                                      0xe7dbfbff, 0x00000209);
+                break;
+              case CacheParams:
+                result = getCacheParameters(tc, index);
                 break;
               case ExtendedFeatures:
                 result = CpuidResult(0x00000000, 0x01800000,

@@ -90,6 +90,7 @@ Source('loader/symtab.cc')
 
 Source('stats/group.cc')
 Source('stats/text.cc')
+Source('stats/sql.cc')
 if env['USE_HDF5']:
     Source('stats/hdf5.cc', append={'CXXFLAGS': '-Wno-deprecated-copy'})
 

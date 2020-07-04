@@ -316,32 +316,47 @@ resetstats(ThreadContext *tc, Tick delay, Tick period)
     Stats::schedStatEvent(false, true, when, repeat);
 }
 
+std::string
+copyOutMsg(Addr msg_addr, ThreadContext* tc) {
+    size_t max_msg_len = 1024;
+    uint8_t* msg_buf = new uint8_t[max_msg_len + 1];
+    tc->getVirtProxy().readBlob(msg_addr, msg_buf, max_msg_len);
+    msg_buf[max_msg_len] = '\0';
+    std::string msg = std::string((char*)msg_buf);
+    delete [] msg_buf;
+    return msg;
+}
+
 void
-dumpstats(ThreadContext *tc, Tick delay, Tick period)
+dumpstats(ThreadContext *tc, Tick delay, Tick period, Addr msg_addr)
 {
     DPRINTF(PseudoInst, "PseudoInst::dumpstats(%i, %i)\n", delay, period);
     if (!tc->getCpuPtr()->params()->do_statistics_insts)
         return;
 
+    // Copy out message.
+    std::string msg = copyOutMsg(msg_addr, tc);
 
     Tick when = curTick() + delay * SimClock::Int::ns;
     Tick repeat = period * SimClock::Int::ns;
 
-    Stats::schedStatEvent(true, false, when, repeat);
+    Stats::schedStatEvent(true, false, when, repeat, msg);
 }
 
 void
-dumpresetstats(ThreadContext *tc, Tick delay, Tick period)
+dumpresetstats(ThreadContext *tc, Tick delay, Tick period, Addr msg_addr)
 {
     DPRINTF(PseudoInst, "PseudoInst::dumpresetstats(%i, %i)\n", delay, period);
     if (!tc->getCpuPtr()->params()->do_statistics_insts)
         return;
 
+    // Copy out message.
+    std::string msg = copyOutMsg(msg_addr, tc);
 
     Tick when = curTick() + delay * SimClock::Int::ns;
     Tick repeat = period * SimClock::Int::ns;
 
-    Stats::schedStatEvent(true, true, when, repeat);
+    Stats::schedStatEvent(true, true, when, repeat, msg);
 }
 
 void
@@ -596,6 +611,11 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
             exitSimLoop("work items exit count reached");
         }
     }
+}
+
+// Return the id of the simulated CPU that is running this thread.
+uint64_t getCpuid(ThreadContext* tc) {
+    return tc->getCpuPtr()->cpuId();
 }
 
 } // namespace PseudoInst

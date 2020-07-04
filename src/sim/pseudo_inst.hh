@@ -111,8 +111,8 @@ void wakeCPU(ThreadContext *tc, uint64_t cpuid);
 void m5exit(ThreadContext *tc, Tick delay);
 void m5fail(ThreadContext *tc, Tick delay, uint64_t code);
 void resetstats(ThreadContext *tc, Tick delay, Tick period);
-void dumpstats(ThreadContext *tc, Tick delay, Tick period);
-void dumpresetstats(ThreadContext *tc, Tick delay, Tick period);
+void dumpstats(ThreadContext *tc, Tick delay, Tick period, Addr msg_addr);
+void dumpresetstats(ThreadContext *tc, Tick delay, Tick period, Addr msg_addr);
 void m5checkpoint(ThreadContext *tc, Tick delay, Tick period);
 void debugbreak(ThreadContext *tc);
 void switchcpu(ThreadContext *tc);
@@ -120,6 +120,7 @@ void workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void workend(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void m5Syscall(ThreadContext *tc);
 void togglesync(ThreadContext *tc);
+uint64_t getCpuid(ThreadContext *tc);
 
 /**
  * Execute a decoded M5 pseudo instruction
@@ -233,9 +234,11 @@ pseudoInst(ThreadContext *tc, uint8_t func, uint64_t &result)
       case M5OP_WORK_END:
         invokeSimcall<ABI>(tc, workend);
         return true;
+      
+      case M5OP_GET_CPUID:
+        return invokeSimcall<ABI>(tc, getCpuid);
 
       case M5OP_RESERVED1:
-      case M5OP_RESERVED2:
       case M5OP_RESERVED3:
       case M5OP_RESERVED4:
       case M5OP_RESERVED5:

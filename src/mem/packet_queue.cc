@@ -115,8 +115,12 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
 
     // add a very basic sanity check on the port to ensure the
     // invisible buffer is not growing beyond reasonable limits
-    if (!_disableSanityCheck && transmitList.size() > 100) {
-        panic("Packet queue %s has grown beyond 100 packets\n",
+    //
+    // NOTE: When using Ruby with DMA, the amount of traffic generated can be
+    // far greater than what can be produced by a CPU, so increase this
+    // threshold from 100 to 1000 to avoid tripping the sanity check.
+    if (!_disableSanityCheck && transmitList.size() > 1000) {
+        panic("Packet queue %s has grown beyond 1000 packets\n",
               name());
     }
 

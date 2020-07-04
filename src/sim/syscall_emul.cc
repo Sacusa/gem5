@@ -40,6 +40,7 @@
 
 #include "arch/utility.hh"
 #include "base/chunk_generator.hh"
+#include "base/loader/object_file.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/thread_context.hh"
@@ -713,11 +714,97 @@ dup2Func(SyscallDesc *desc, ThreadContext *tc, int old_tgt_fd, int new_tgt_fd)
     return p->fds->allocFD(new_hbp);
 }
 
+void
+fcntlAladdinHandler(Process *process, ThreadContext *tc)
+{
+    int index = 1;
+    int cmd = process->getSyscallArg(tc, index);
+    Addr params_ptr = (Addr) process->getSyscallArg(tc, index);
+    auto& memProxy = tc->getVirtProxy();
+
+    // Deserialize the mapping struct bytes.
+    size_t word_size = 4;
+    if (process->objFile->getArch() == ObjectFile::X86_64) {
+      word_size = 8;
+    }
+
+    if (cmd == ALADDIN_MAP_ARRAY) {
+        uint8_t* mapping_buf = new uint8_t[sizeof(aladdin_map_t)];
+        memProxy.readBlob(params_ptr, mapping_buf, sizeof(aladdin_map_t));
+        aladdin_map_t* mapping = reinterpret_cast<aladdin_map_t*>(mapping_buf);
+        void* addr = nullptr;
+        void* array_name_addr = nullptr;
+        unsigned request_code = mapping->request_code;;
+        size_t size = mapping->size;;
+        memcpy(&array_name_addr, &mapping->array_name, word_size);
+        memcpy(&addr, &mapping->addr, word_size);
+
+        // Extract the array name. Assume the variable name is at most 100
+        // chars.
+        uint8_t* string_buf = new uint8_t[100];
+        memProxy.readBlob((Addr)array_name_addr, string_buf, 100);
+        const char* array_name = (const char*)string_buf;
+
+        Addr sim_base_addr = reinterpret_cast<Addr>(addr);
+        inform("Received mapping for array %s at vaddr %x of length %d.\n",
+               array_name, sim_base_addr, size);
+
+        // TODO: Do we need to delete past mappings of the same array? Would it
+        // cause issues if we don't?
+        process->system->insertArrayLabelMapping(
+            request_code, array_name, sim_base_addr, size);
+
+        // Set up all mappings, taking into account straddling page boundaries.
+        Addr starting_page_offset = sim_base_addr & (TheISA::PageBytes - 1);
+        int num_pages =
+            ceil(((float)size + starting_page_offset) / TheISA::PageBytes);
+        for (int i = 0; i < num_pages; i++) {
+            Addr paddr;
+            process->pTable->translate(
+                sim_base_addr + i * TheISA::PageBytes, paddr);
+            process->system->insertAddressTranslationMapping(
+                request_code,
+                sim_base_addr + i * TheISA::PageBytes,  // Simulated vaddr.
+                paddr);                                 // Simulated paddr.
+        }
+
+        delete mapping_buf;
+        delete string_buf;
+    } else if (cmd == ALADDIN_MEM_DESC) {
+        uint8_t* desc_buf = new uint8_t[sizeof(aladdin_mem_desc_t)];
+        memProxy.readBlob(params_ptr, desc_buf, sizeof(aladdin_mem_desc_t));
+        aladdin_mem_desc_t* desc =
+            reinterpret_cast<aladdin_mem_desc_t*>(desc_buf);
+        void* array_name_addr = nullptr;
+        MemoryType mem_type = desc->mem_type;
+        unsigned request_code = desc->request_code;
+        memcpy(&array_name_addr, &desc->array_name, word_size);
+
+        // Extract the array name. Assume the variable name is at most 100
+        // chars.
+        uint8_t* name_string_buf = new uint8_t[100];
+        memProxy.readBlob((Addr)array_name_addr, name_string_buf, 100);
+        const char* array_name = (const char*)name_string_buf;
+
+        inform("Set memory access type to %s for array %s.\n",
+               memoryTypeToString(mem_type), array_name);
+        process->system->setArrayMemoryType(request_code, array_name, mem_type);
+
+        delete desc_buf;
+        delete name_string_buf;
+    }
+}
+
 SyscallReturn
 fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
           int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs)
 {
     auto p = tc->getProcessPtr();
+
+    if (tgt_fd == ALADDIN_FD) {
+        fcntlAladdinHandler(p, tc);
+        return 0;
+    }
 
     auto hbfdp = std::dynamic_pointer_cast<HBFDEntry>((*p->fds)[tgt_fd]);
     if (!hbfdp)
@@ -759,6 +846,11 @@ SyscallReturn
 fcntl64Func(SyscallDesc *desc, ThreadContext *tc, int tgt_fd, int cmd)
 {
     auto p = tc->getProcessPtr();
+
+    if (cmd == ALADDIN_FD) {
+        fcntlAladdinHandler(p, tc);
+        return 0;
+    }
 
     auto hbfdp = std::dynamic_pointer_cast<HBFDEntry>((*p->fds)[tgt_fd]);
     if (!hbfdp)

@@ -156,6 +156,10 @@ AddLocalOption('--update-ref', dest='update_ref', action='store_true',
                help='Update test reference outputs')
 AddLocalOption('--verbose', dest='verbose', action='store_true',
                help='Print full tool command lines')
+AddLocalOption('--use-db', dest='use_db', action='store_true',
+               help='Compile with support for writing to MySQL DB.')
+AddLocalOption('--debug-aladdin', dest='debug_aladdin', action='store_true',
+               help='Compile with Aladdin debugging output.')
 AddLocalOption('--without-python', dest='without_python',
                action='store_true',
                help='Build without Python configuration support')
@@ -254,7 +258,8 @@ main['BUILDROOT'] = build_root
 
 Export('main')
 
-main.SConsignFile(joinpath(build_root, "sconsign"))
+# Put the sconsign DB in its own folder so we can use Travis to cache it.
+main.SConsignFile(joinpath(build_root, "sconsign", "sconsign"))
 
 # Default duplicate option is to use hard links, but this messes up
 # when you use emacs to edit a file in the target dir, as emacs moves
@@ -282,6 +287,13 @@ global_vars.AddVariables(
     ('BATCH', 'Use batch pool for build and tests', False),
     ('BATCH_CMD', 'Batch pool submission command name', 'qdo'),
     ('M5_BUILD_CACHE', 'Cache built objects in this directory', False),
+    ('BOOST_ROOT', 'Boost library location', environ.get('BOOST_ROOT'), None),
+    ('MYSQL_HOME', 'MySQL library location', environ.get('MYSQL_HOME'), None),
+    ('USER_TOOLCHAIN_ROOT',
+         'Path to toolchain if installed in non-standard location',
+         environ.get('USER_TOOLCHAIN_ROOT', None)),
+    ('FORCE_CXX11_ABI', 'Force use of CXX11 ABI on gcc 5.0+',
+         environ.get('FORCE_CXX11_ABI', True)),
     ('EXTRAS', 'Add extra directories to the compilation', '')
     )
 
@@ -309,6 +321,14 @@ main.Append(CPPPATH=[Dir('ext')])
 # Add shared top-level headers
 main.Prepend(CPPPATH=Dir('include'))
 
+if 'USER_TOOLCHAIN_ROOT' in main and main['USER_TOOLCHAIN_ROOT']:
+    toolchain_bin_path = os.path.join(main['USER_TOOLCHAIN_ROOT'], 'bin')
+    toolchain_lib_path = os.path.join(main['USER_TOOLCHAIN_ROOT'], 'lib')
+    main.Append(PATH=[toolchain_bin_path])
+    main.Append(LIBPATH=[toolchain_lib_path])
+    main['CC'] = os.path.join(toolchain_bin_path, main['CC'])
+    main['CXX'] = os.path.join(toolchain_bin_path, main['CXX'])
+
 if GetOption('verbose'):
     def MakeAction(action, string, *args, **kwargs):
         return Action(action, *args, **kwargs)
@@ -325,6 +345,23 @@ else:
     main['SHCCCOMSTR']      = Transform("SHCC")
     main['SHCXXCOMSTR']     = Transform("SHCXX")
 Export('MakeAction')
+
+if 'BOOST_ROOT' in main and main['BOOST_ROOT']:
+    boost_lib_path = os.path.join(main['BOOST_ROOT'], 'lib')
+    main.Append(CPPPATH=[os.path.join(main['BOOST_ROOT'], 'include')])
+    main.Append(LIBPATH=[boost_lib_path])
+    main.Append(LD_LIBRARY_PATH=[boost_lib_path])
+    main.Append(LIBS=['boost_graph'])
+
+if GetOption('use_db'):
+    if 'MYSQL_HOME' in main and main['MYSQL_HOME']:
+        main.Append(CPPPATH=[os.path.join(main['MYSQL_HOME'], 'include')])
+        main.Append(CXXFLAGS='-DUSE_DB')
+        main.Append(LIBPATH=[os.path.join(main['MYSQL_HOME'], 'lib')])
+        main.Append(LIBS=['-lmysqlcppconn'])
+
+if GetOption('debug_aladdin'):
+    main.Append(CPPFLAGS = '-DDEBUG')
 
 # Initialize the Link-Time Optimization (LTO) flags
 main['LTO_CCFLAGS'] = []
@@ -344,6 +381,14 @@ main['CLANG'] = CXX_version and CXX_version.find('clang') >= 0
 if main['GCC'] + main['CLANG'] > 1:
     error('Two compilers enabled at once?')
 
+# Set up LLVM version for Aladdin.
+llvm_cmd = readCommand(['clang', '--version'], exception=False)
+llvm_version = ''.join(re.findall(r'\d+', llvm_cmd)[:2])
+if llvm_version != '60' and llvm_version != '34':
+    warning('Warning: we only support LLVM-3.4 and LLVM-6.0!')
+else:
+    main.Append(CCFLAGS=['-DLLVM_VERSION=' + llvm_version])
+
 # Set up default C++ compiler flags
 if main['GCC'] or main['CLANG']:
     # As gcc and clang share many flags, do the common parts here
@@ -352,9 +397,18 @@ if main['GCC'] or main['CLANG']:
     # Enable -Wall and -Wextra and then disable the few warnings that
     # we consistently violate
     main.Append(CCFLAGS=['-Wall', '-Wundef', '-Wextra',
-                         '-Wno-sign-compare', '-Wno-unused-parameter'])
-    # We always compile using C++11
-    main.Append(CXXFLAGS=['-std=c++11'])
+                         '-Wno-sign-compare', '-Wno-unused-parameter',
+                         '-Wmissing-field-initializers',
+                         # For Boost 1.58
+                         '-Wno-undef',
+                         # These come from CACTI.
+                         '-Wno-unused-local-typedefs',
+                         '-Wno-reorder',
+                         '-Wno-maybe-uninitialized',
+                         '-Wno-unused-but-set-variable'])
+    # We compile using C++14
+    main.Append(CXXFLAGS=['-std=c++14'])
+    main.Append(CXXFLAGS=['-DNTHREADS=8'])
     if sys.platform.startswith('freebsd'):
         main.Append(CCFLAGS=['-I/usr/local/include'])
         main.Append(CXXFLAGS=['-I/usr/local/include'])
@@ -450,6 +504,19 @@ if main['GCC']:
 
     main.Append(TCMALLOC_CCFLAGS=['-fno-builtin-malloc', '-fno-builtin-calloc',
                                   '-fno-builtin-realloc', '-fno-builtin-free'])
+
+    # add option to check for undeclared overrides
+    if compareVersions(gcc_version, "5.0") > 0:
+        main.Append(CCFLAGS=['-Wno-error=suggest-override',
+                             # For Boost.
+                             '-Wno-deprecated-declarations'])
+        # GCC 5 introduced a new ABI to conform to certain C++11 standards,
+        # which will result in link failures if other dependencies were
+        # compiled with the older ABI, so for the sake of backwards
+        # compatibility, use the older ABI unless the user has explicitly
+        # requested otherwise.
+        if not ('FORCE_CXX11_ABI' in main and main['FORCE_CXX11_ABI']):
+            main.Append(CPPFLAGS=["-D_GLIBCXX_USE_CXX11_ABI=0"])
 
 elif main['CLANG']:
     # Check for a supported version of clang, >= 3.1 is needed to
@@ -736,6 +803,8 @@ main.Prepend(CPPPATH=Dir('ext/pybind11/include/'))
 # Bare minimum environment that only includes python
 base_py_env = main.Clone()
 
+main.Prepend(CPPPATH=Dir('ext/fp16/include/'))
+
 # On Solaris you need to use libsocket for socket ops
 if not conf.CheckLibWithHeader(None, 'sys/socket.h', 'C++', 'accept(0,0,0);'):
    if not conf.CheckLibWithHeader('socket', 'sys/socket.h',
@@ -788,6 +857,9 @@ if not GetOption('without_tcmalloc'):
                 "installing tcmalloc (libgoogle-perftools-dev package "
                 "on Ubuntu or RedHat).")
 
+# Check if we have libreadline (used for the Aladdin debugger).
+if conf.CheckLibWithHeader('readline', 'readline/readline.h', 'C'):
+    main.Append(CCFLAGS = '-DHAS_READLINE')
 
 # Detect back trace implementations. The last implementation in the
 # list will be used by default.
@@ -802,6 +874,10 @@ elif conf.CheckLibWithHeader('execinfo', 'execinfo.h', 'C',
     # NetBSD and FreeBSD need libexecinfo.
     backtrace_impls.append("glibc")
     main.Append(LIBS=['execinfo'])
+
+if conf.CheckLibWithHeader("sqlite3", "sqlite3.h", "C"):
+    main.Append(CPPFLAGS="-DENABLE_SQLITE_STATS_OUTPUT")
+    main.Append(LIBS=['sqlite3'])
 
 if backtrace_impls[-1] == "none":
     default_backtrace_impl = "none"

@@ -48,8 +48,9 @@ void m5_fail(uint64_t ns_delay, uint64_t code);
 uint64_t m5_init_param(uint64_t key_str1, uint64_t key_str2);
 void m5_checkpoint(uint64_t ns_delay, uint64_t ns_period);
 void m5_reset_stats(uint64_t ns_delay, uint64_t ns_period);
-void m5_dump_stats(uint64_t ns_delay, uint64_t ns_period);
-void m5_dump_reset_stats(uint64_t ns_delay, uint64_t ns_period);
+void m5_dump_stats(uint64_t ns_delay, uint64_t ns_period, const char* msg);
+void m5_dump_reset_stats(uint64_t ns_delay, uint64_t ns_period,
+        const char* msg);
 uint64_t m5_read_file(void *buffer, uint64_t len, uint64_t offset);
 uint64_t m5_write_file(void *buffer, uint64_t len, uint64_t offset,
                        const char *filename);
@@ -61,6 +62,7 @@ void m5_load_symbol();
 void m5_panic(void);
 void m5_work_begin(uint64_t workid, uint64_t threadid);
 void m5_work_end(uint64_t workid, uint64_t threadid);
+uint64_t m5_get_cpuid(void);
 
 void m5_se_syscall();
 void m5_se_page_fault();

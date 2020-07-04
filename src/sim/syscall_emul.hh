@@ -105,6 +105,11 @@
 #include "sim/syscall_desc.hh"
 #include "sim/syscall_emul_buf.hh"
 #include "sim/syscall_return.hh"
+#include "sim/sim_exit.hh"
+#include "sim/system.hh"
+
+#include "aladdin/gem5/aladdin_sys_connection.h"
+#include "aladdin/gem5/aladdin_sys_constants.h"
 
 #if defined(__APPLE__) && defined(__MACH__) && !defined(CMSG_ALIGN)
 #define CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1))
@@ -268,6 +273,9 @@ SyscallReturn fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
 /// Target fcntl64() handler.
 SyscallReturn fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
                           int tgt_fd, int cmd);
+
+// Aladdin handler function shared between 32-bit and 64-bit fcntl emulations.
+void fcntlAladdinHandler(Process *process, ThreadContext *tc);
 
 /// Target pipe() handler.
 SyscallReturn pipeFunc(SyscallDesc *desc, ThreadContext *tc, Addr tgt_addr);
@@ -698,6 +706,65 @@ ioctlFunc(SyscallDesc *desc, ThreadContext *tc,
     auto p = tc->getProcessPtr();
 
     DPRINTF_SYSCALL(Verbose, "ioctl(%d, 0x%x, ...)\n", tgt_fd, req);
+
+    if (tgt_fd == ALADDIN_FD) {
+        if (req == DUMP_STATS || req == RESET_STATS) {
+            size_t max_desc_len = 100;
+
+            // Read the description string out of simulated memory.  We make the
+            // char buffer one character longer than the max length so that we
+            // can set the last character to the terminating character in case
+            // the string actually exceeds the max length allowed.
+            Addr desc_addr = (Addr)p->getSyscallArg(tc, index);
+            std::string stat_desc;
+            if (desc_addr != 0) {
+                BufferArg desc_buf(desc_addr, max_desc_len + 2);
+                desc_buf.copyIn(tc->getVirtProxy());
+                char* desc_buf_ptr = (char*)desc_buf.bufferPtr();
+                desc_buf_ptr[max_desc_len] = static_cast<uint8_t>(0);
+                stat_desc = desc_buf_ptr;
+            }
+
+            // Create the final string to pass to exitSimLoop.
+            std::string exit_sim_loop_reason =
+                (req == DUMP_STATS)
+                    ? DUMP_STATS_EXIT_SIM_SIGNAL + stat_desc
+                    : RESET_STATS_EXIT_SIM_SIGNAL + stat_desc;
+
+            exitSimLoop(exit_sim_loop_reason);
+        } else if (req == WAIT_FINISH_SIGNAL) {
+            Addr finish_flag_addr = (Addr)p->getSyscallArg(tc, index);
+            // Read the value of the finish flag.
+            BufferArg finish_flag_buf(finish_flag_addr, sizeof(int));
+            finish_flag_buf.copyIn(tc->getVirtProxy());
+            int mem_val = *(int*)finish_flag_buf.bufferPtr();
+            if (mem_val == NOT_COMPLETED)
+                tc->suspend();
+        } else {
+            Addr params_addr = (Addr)p->getSyscallArg(tc, index);
+
+            // Read the aladdin_params_t struct.
+            BufferArg params_buf(params_addr, sizeof(aladdin_params_t));
+            params_buf.copyIn(tc->getVirtProxy());
+            aladdin_params_t* params = (aladdin_params_t*)params_buf.bufferPtr();
+            // Translate the finish flag pointer to a physical address that
+            // the accelerator will write to when execution is completed.
+            Addr paddr;
+            p->pTable->translate((Addr)params->finish_flag, paddr);
+            // Read the accelerator params.
+            int size = params->size;
+            auto accel_params_buf = std::make_unique<uint8_t[]>(size);
+            if (size > 0) {
+                tc->getVirtProxy().readBlob(
+                    (Addr)params->accel_params_ptr, accel_params_buf.get(), size);
+            }
+            // We need the context and thread id of the calling thread.
+            p->system->activateAccelerator(req, paddr,
+                                           std::move(accel_params_buf),
+                                           tc->contextId(), tc->threadId());
+        }
+        return -ENOTTY;
+    }
 
     if (OS::isTtyReq(req))
         return -ENOTTY;
@@ -1830,6 +1897,32 @@ mmap2Func(SyscallDesc *desc, ThreadContext *tc,
 {
     return mmapFunc<OS>(desc, tc, start, length, prot, tgt_flags,
                         tgt_fd, offset * tc->getSystemPtr()->getPageBytes());
+}
+
+/// Target munmap() handler.
+template <class OS>
+SyscallReturn
+munmapFunc(SyscallDesc *desc, int num, ThreadContext *tc)
+{
+    int index = 0;
+    auto p = tc->getProcessPtr();
+    Addr addr = p->getSyscallArg(tc, index);
+    size_t len = p->getSyscallArg(tc, index);
+
+    if (addr % TheISA::PageBytes != 0 ||
+        len % TheISA::PageBytes != 0) {
+        warn("mmap failing: arguments not page-aligned: "
+             "start 0x%x length 0x%x", addr, len);
+        return -EINVAL;
+    }
+    DPRINTF(SyscallVerbose, "munmap region from %#x-%#x.\n", addr, addr+len);
+
+    // Remove entries from the page table.
+    p->pTable->unmap(addr, len);
+
+    // TODO: With mmap more fully implemented, we might actually be able to
+    // reclaim the memory.
+    return 0;
 }
 
 /// Target getrlimit() handler.

@@ -43,12 +43,16 @@
 
 #include <deque>
 #include <memory>
+#include <vector>
 
 #include "base/circlebuf.hh"
 #include "dev/io_device.hh"
 #include "params/DmaDevice.hh"
 #include "sim/drain.hh"
 #include "sim/system.hh"
+
+// Modification of DMA for Aladdin simulation
+#define MAX_DMA_REQUEST 64
 
 class ClockedObject;
 
@@ -72,6 +76,21 @@ class DmaPort : public MasterPort, public Drainable
      * list.
      */
     void sendDma();
+
+    // Describes a call to dmaAction(). It can be used to delay the actual
+    // construction and queuing of DMA packets. Each of these fields is an
+    // argument to dmaAction().
+    struct DmaActionReq {
+        Packet::Command cmd;
+        Addr addr;
+        int size;
+        Event* event;
+        uint8_t* data;
+        Tick delay;
+        Request::Flags flag;
+        uint32_t sid;
+        uint32_t ssid;
+    };
 
     /**
      * Handle a response packet by updating the corresponding DMA
@@ -97,13 +116,33 @@ class DmaPort : public MasterPort, public Drainable
         /** Number of bytes that have been acked for this transaction. */
         Addr numBytes;
 
+        /** DMA request address for this transaction. */
+        Addr addr;
+
         /** Amount to delay completion of dma by */
         const Tick delay;
 
-        DmaReqState(Event *ce, Addr tb, Tick _delay)
-            : completionEvent(ce), totBytes(tb), numBytes(0), delay(_delay)
+        DmaReqState(Event *ce, Addr tb, Addr _addr, Tick _delay)
+            : completionEvent(ce), totBytes(tb),
+              numBytes(0), addr(_addr), delay(_delay)
         {}
     };
+
+    /** Event used to act on a delayed dmaAction request. */
+    EventFunctionWrapper sendDataAfterInvalidateEvent;
+    std::deque<DmaActionReq> outstandingRequests;
+
+    /**
+     * Callback function for sendDataAfterInvalidateEvent.  This quees up the
+     * first DmaActionReq on the outstanding requests list.
+     */
+    void sendDataAfterInvalidate();
+
+    /**
+     * Queue up DMA packets for this DmaActionReq at cache line granularity
+     * and return the last request queued.
+     */
+    RequestPtr queueDmaAction(DmaActionReq& req, DmaReqState *reqState);
 
   public:
     /** The device that owns this port. */
@@ -117,8 +156,10 @@ class DmaPort : public MasterPort, public Drainable
     const MasterID masterId;
 
   protected:
-    /** Use a deque as we never do any insertion or removal in the middle */
-    std::deque<PacketPtr> transmitList;
+    /** Each deque represents a memory channel that never does any insertion or
+     * removal in the middle. A vector of deques are used to represent
+     * multi-chanel DMAs that requests across channels can be interleaved. */
+    std::vector< std::deque<PacketPtr> > transmitList;
 
     /** Event used to schedule a future sending from the transmit list. */
     EventFunctionWrapper sendEvent;
@@ -129,6 +170,28 @@ class DmaPort : public MasterPort, public Drainable
     /** If the port is currently waiting for a retry before it can
      * send whatever it is that it's sending. */
     bool inRetry;
+
+    /** Max number of outstanding requests*/
+    unsigned maxRequests;
+
+    /** Number of outstanding requests*/
+    unsigned numOutstandingRequests;
+
+    /** Keep track of the current channel index to send DMA request. */
+    unsigned currChannel;
+
+    /** DMA transaction chunk size. */
+    unsigned chunkSize;
+
+    /** Number of virtual DMA channels. */
+    unsigned numChannels;
+
+    /** True if we should send invalidation packets before writes.
+     *
+     * This would invalidate every cache line touched by a dmaAction call that
+     * updates memory before issuing the write request.
+     */
+    bool invalidateOnWrite;
 
     /** Default streamId */
     const uint32_t defaultSid;
@@ -141,12 +204,22 @@ class DmaPort : public MasterPort, public Drainable
     bool recvTimingResp(PacketPtr pkt) override;
     void recvReqRetry() override;
 
-    void queueDma(PacketPtr pkt);
+    void queueDma(unsigned channel_index, PacketPtr pkt);
+
+    unsigned findNextEmptyChannel();
+    unsigned findNextNonEmptyChannel();
 
   public:
 
-    DmaPort(ClockedObject *dev, System *s,
-            uint32_t sid = 0, uint32_t ssid = 0);
+    static Addr getPacketAddr(PacketPtr pkt);
+    static Event* getPacketCompletionEvent(PacketPtr pkt);
+
+    DmaPort(ClockedObject *dev, System *s, uint32_t sid = 0, uint32_t ssid = 0);
+
+    DmaPort(ClockedObject *dev, System *s, unsigned max_req,
+            unsigned _chunkSize, unsigned _numChannels = 1,
+            bool _invalidateOnWrite = false, uint32_t sid = 0,
+            uint32_t ssid = 0);
 
     RequestPtr
     dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
