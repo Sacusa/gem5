@@ -272,7 +272,7 @@ SyscallReturn fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
 
 /// Target fcntl64() handler.
 SyscallReturn fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
-                          int tgt_fd, int cmd);
+                          int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs);
 
 // Aladdin handler function shared between 32-bit and 64-bit fcntl emulations.
 void fcntlAladdinHandler(Process *process, ThreadContext *tc,
@@ -1901,7 +1901,6 @@ template <class OS>
 SyscallReturn
 munmapFunc(SyscallDesc *desc, int num, ThreadContext *tc, Addr start, size_t len)
 {
-    int index = 0;
     auto p = tc->getProcessPtr();
 
     if (start % TheISA::PageBytes != 0 ||

@@ -325,7 +325,6 @@ _llseekFunc(SyscallDesc *desc, ThreadContext *tc,
     return 0;
 }
 
-
 SyscallReturn
 munmapFunc(SyscallDesc *desc, ThreadContext *tc, Addr start, size_t length)
 {
@@ -345,7 +344,6 @@ munmapFunc(SyscallDesc *desc, ThreadContext *tc, Addr start, size_t length)
 
     return 0;
 }
-
 
 const char *hostname = "m5.eecs.umich.edu";
 
@@ -718,12 +716,11 @@ void
 fcntlAladdinHandler(Process *process, ThreadContext *tc,
                     int cmd, Addr params_ptr)
 {
-    int index = 1;
     auto& memProxy = tc->getVirtProxy();
 
     // Deserialize the mapping struct bytes.
     size_t word_size = 4;
-    if (process->objFile->getArch() == ObjectFile::X86_64) {
+    if (process->objFile->getArch() == Loader::X86_64) {
       word_size = 8;
     }
 
@@ -801,7 +798,8 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
     auto p = tc->getProcessPtr();
 
     if (tgt_fd == ALADDIN_FD) {
-        fcntlAladdinHandler(p, tc, cmd, varargs.get<Addr>());
+        // TODO: should be varargs.get<Addr>()
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<int>());
         return 0;
     }
 
@@ -842,12 +840,14 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
 }
 
 SyscallReturn
-fcntl64Func(SyscallDesc *desc, ThreadContext *tc, int tgt_fd, int cmd)
+fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
+            int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs)
 {
     auto p = tc->getProcessPtr();
 
     if (cmd == ALADDIN_FD) {
-        fcntlAladdinHandler(p, tc, cmd, varargs.get<Addr>());
+        // TODO: should be varargs.get<Addr>()
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<int>());
         return 0;
     }
 
