@@ -56,7 +56,9 @@ DmaPort::DmaPort(ClockedObject *dev, System *s,
       sendEvent([this]{ sendDma(); }, dev->name()),
       pendingCount(0), inRetry(false),
       defaultSid(sid),
-      defaultSSid(ssid)
+      defaultSSid(ssid),
+      sendDataAfterInvalidateEvent(
+          [this] { sendDataAfterInvalidate(); }, dev->name())
 { }
 
 DmaPort::DmaPort(ClockedObject *dev, System *s, unsigned max_req,
