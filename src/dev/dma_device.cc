@@ -49,18 +49,6 @@
 #include "sim/clocked_object.hh"
 #include "sim/system.hh"
 
-DmaPort::DmaPort(ClockedObject *dev, System *s,
-                 uint32_t sid, uint32_t ssid)
-    : MasterPort(dev->name() + ".dma", dev),
-      device(dev), sys(s), masterId(s->getMasterId(dev)),
-      sendEvent([this]{ sendDma(); }, dev->name()),
-      pendingCount(0), inRetry(false),
-      defaultSid(sid),
-      defaultSSid(ssid),
-      sendDataAfterInvalidateEvent(
-          [this] { sendDataAfterInvalidate(); }, dev->name())
-{ }
-
 DmaPort::DmaPort(ClockedObject *dev, System *s, unsigned max_req,
                  unsigned _chunkSize, unsigned _numChannels,
                  bool _invalidateOnWrite, uint32_t sid, uint32_t ssid)
