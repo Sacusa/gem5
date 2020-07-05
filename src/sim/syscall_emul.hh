@@ -275,7 +275,8 @@ SyscallReturn fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
                           int tgt_fd, int cmd);
 
 // Aladdin handler function shared between 32-bit and 64-bit fcntl emulations.
-void fcntlAladdinHandler(Process *process, ThreadContext *tc);
+void fcntlAladdinHandler(Process *process, ThreadContext *tc,
+                         int cmd, Addr params_ptr);
 
 /// Target pipe() handler.
 SyscallReturn pipeFunc(SyscallDesc *desc, ThreadContext *tc, Addr tgt_addr);
@@ -715,10 +716,9 @@ ioctlFunc(SyscallDesc *desc, ThreadContext *tc,
             // char buffer one character longer than the max length so that we
             // can set the last character to the terminating character in case
             // the string actually exceeds the max length allowed.
-            Addr desc_addr = (Addr)p->getSyscallArg(tc, index);
             std::string stat_desc;
-            if (desc_addr != 0) {
-                BufferArg desc_buf(desc_addr, max_desc_len + 2);
+            if (addr != 0) {
+                BufferArg desc_buf(addr, max_desc_len + 2);
                 desc_buf.copyIn(tc->getVirtProxy());
                 char* desc_buf_ptr = (char*)desc_buf.bufferPtr();
                 desc_buf_ptr[max_desc_len] = static_cast<uint8_t>(0);
@@ -733,18 +733,15 @@ ioctlFunc(SyscallDesc *desc, ThreadContext *tc,
 
             exitSimLoop(exit_sim_loop_reason);
         } else if (req == WAIT_FINISH_SIGNAL) {
-            Addr finish_flag_addr = (Addr)p->getSyscallArg(tc, index);
             // Read the value of the finish flag.
-            BufferArg finish_flag_buf(finish_flag_addr, sizeof(int));
+            BufferArg finish_flag_buf(addr, sizeof(int));
             finish_flag_buf.copyIn(tc->getVirtProxy());
             int mem_val = *(int*)finish_flag_buf.bufferPtr();
             if (mem_val == NOT_COMPLETED)
                 tc->suspend();
         } else {
-            Addr params_addr = (Addr)p->getSyscallArg(tc, index);
-
             // Read the aladdin_params_t struct.
-            BufferArg params_buf(params_addr, sizeof(aladdin_params_t));
+            BufferArg params_buf(addr, sizeof(aladdin_params_t));
             params_buf.copyIn(tc->getVirtProxy());
             aladdin_params_t* params = (aladdin_params_t*)params_buf.bufferPtr();
             // Translate the finish flag pointer to a physical address that
@@ -1902,23 +1899,21 @@ mmap2Func(SyscallDesc *desc, ThreadContext *tc,
 /// Target munmap() handler.
 template <class OS>
 SyscallReturn
-munmapFunc(SyscallDesc *desc, int num, ThreadContext *tc)
+munmapFunc(SyscallDesc *desc, int num, ThreadContext *tc, Addr start, size_t len)
 {
     int index = 0;
     auto p = tc->getProcessPtr();
-    Addr addr = p->getSyscallArg(tc, index);
-    size_t len = p->getSyscallArg(tc, index);
 
-    if (addr % TheISA::PageBytes != 0 ||
+    if (start % TheISA::PageBytes != 0 ||
         len % TheISA::PageBytes != 0) {
         warn("mmap failing: arguments not page-aligned: "
-             "start 0x%x length 0x%x", addr, len);
+             "start 0x%x length 0x%x", start, len);
         return -EINVAL;
     }
-    DPRINTF(SyscallVerbose, "munmap region from %#x-%#x.\n", addr, addr+len);
+    DPRINTF(SyscallVerbose, "munmap region from %#x-%#x.\n", start, start+len);
 
     // Remove entries from the page table.
-    p->pTable->unmap(addr, len);
+    p->pTable->unmap(start, len);
 
     // TODO: With mmap more fully implemented, we might actually be able to
     // reclaim the memory.

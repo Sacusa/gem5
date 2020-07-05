@@ -715,11 +715,10 @@ dup2Func(SyscallDesc *desc, ThreadContext *tc, int old_tgt_fd, int new_tgt_fd)
 }
 
 void
-fcntlAladdinHandler(Process *process, ThreadContext *tc)
+fcntlAladdinHandler(Process *process, ThreadContext *tc,
+                    int cmd, Addr params_ptr)
 {
     int index = 1;
-    int cmd = process->getSyscallArg(tc, index);
-    Addr params_ptr = (Addr) process->getSyscallArg(tc, index);
     auto& memProxy = tc->getVirtProxy();
 
     // Deserialize the mapping struct bytes.
@@ -802,7 +801,7 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
     auto p = tc->getProcessPtr();
 
     if (tgt_fd == ALADDIN_FD) {
-        fcntlAladdinHandler(p, tc);
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<Addr>());
         return 0;
     }
 
@@ -848,7 +847,7 @@ fcntl64Func(SyscallDesc *desc, ThreadContext *tc, int tgt_fd, int cmd)
     auto p = tc->getProcessPtr();
 
     if (cmd == ALADDIN_FD) {
-        fcntlAladdinHandler(p, tc);
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<Addr>());
         return 0;
     }
 

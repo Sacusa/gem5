@@ -241,13 +241,13 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
 
     Addr line_addr = makeLineAddress(pkt->getAddr());
     // Check if there is any outstanding request for the same cache line.
-    auto *seq_req_list = m_RequestTable[line_addr];
+    auto &seq_req_list = m_RequestTable[line_addr];
     // Create a default entry
-    seq_req_list->emplace_back(
+    seq_req_list.emplace_back(
         new SequencerRequest(pkt, primary_type, secondary_type, curCycle()));
     m_outstanding_count++;
 
-    if (seq_req_list->size() > 1) {
+    if (seq_req_list.size() > 1) {
         return RequestStatus_Aliased;
     }
 
@@ -348,7 +348,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
     //
     assert(address == makeLineAddress(address));
     assert(m_RequestTable.find(address) != m_RequestTable.end());
-    auto *seq_req_list = m_RequestTable[address];
+    auto &seq_req_list = m_RequestTable[address];
 
     // Perform hitCallback on every cpu request made to this cache block while
     // ruby request was outstanding. Since only 1 ruby request was made,
@@ -356,15 +356,15 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
     bool ruby_request = true;
     int aliased_stores = 0;
     int aliased_loads = 0;
-    while (!seq_req_list->empty()) {
-        SequencerRequest *seq_req = seq_req_list->front();
+    while (!seq_req_list.empty()) {
+        SequencerRequest *seq_req = seq_req_list.front();
         // We need to remove the request before the retry signal is sent in the
         // call of hitCallback, otherwise the retry request could find itself
         // aliased with the current request, causing a failed retry (if the
         // controller uses a write-through policy) and in turn a deadlock
         // because no further retry signal will be sent.
-        seq_req_list->pop_front();
-        bool lastReq = seq_req_list->empty();
+        seq_req_list.pop_front();
+        bool lastReq = seq_req_list.empty();
         if (ruby_request) {
             assert(seq_req->m_type != RubyRequestType_LD);
             assert(seq_req->m_type != RubyRequestType_Load_Linked);
@@ -437,12 +437,12 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         // request, confusing the cache response received later as the request
         // has already been removed from the list.
         if (m_controller->isWriteThrough() ||
-            (lastReq && !seq_req_list->empty()))
+            (lastReq && !seq_req_list.empty()))
             break;
     }
 
     // free all outstanding requests corresponding to this address
-    if (seq_req_list->empty()) {
+    if (seq_req_list.empty()) {
         m_RequestTable.erase(address);
     }
 }
@@ -460,15 +460,15 @@ Sequencer::readCallback(Addr address, DataBlock& data,
     //
     assert(address == makeLineAddress(address));
     assert(m_RequestTable.find(address) != m_RequestTable.end());
-    auto *seq_req_list = m_RequestTable[address];
+    auto &seq_req_list = m_RequestTable[address];
 
     // Perform hitCallback on every cpu request made to this cache block while
     // ruby request was outstanding. Since only 1 ruby request was made,
     // profile the ruby latency once.
     bool ruby_request = true;
     int aliased_loads = 0;
-    while (!seq_req_list->empty()) {
-        SequencerRequest *seq_req = seq_req_list->front();
+    while (!seq_req_list.empty()) {
+        SequencerRequest *seq_req = seq_req_list.front();
         if (ruby_request) {
             assert((seq_req->m_type == RubyRequestType_LD) ||
                    (seq_req->m_type == RubyRequestType_Load_Linked) ||
@@ -488,8 +488,8 @@ Sequencer::readCallback(Addr address, DataBlock& data,
                               initialRequestTime, forwardRequestTime,
                               firstResponseTime);
         }
-        seq_req_list->pop_front();
-        bool lastReq = seq_req_list->empty();
+        seq_req_list.pop_front();
+        bool lastReq = seq_req_list.empty();
         hitCallback(seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
                     firstResponseTime);
@@ -498,12 +498,12 @@ Sequencer::readCallback(Addr address, DataBlock& data,
 
         // Similar to writeCallback(), if processing the last request ends up
         // adding new requests to the list, we must exit the loop.
-        if (lastReq && !seq_req_list->empty())
+        if (lastReq && !seq_req_list.empty())
             break;
     }
 
     // free all outstanding requests corresponding to this address
-    if (seq_req_list->empty()) {
+    if (seq_req_list.empty()) {
         m_RequestTable.erase(address);
     }
 }
