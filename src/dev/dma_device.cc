@@ -136,7 +136,6 @@ DmaPort::recvTimingResp(PacketPtr pkt)
 DmaDevice::DmaDevice(const Params *p)
     : PioDevice(p), dmaPort(this, sys, MAX_DMA_REQUEST, sys->cacheLineSize(), 1,
                             false, p->sid, p->ssid) {}
-{ }
 
 void
 DmaDevice::init()

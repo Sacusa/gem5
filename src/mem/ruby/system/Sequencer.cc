@@ -189,7 +189,7 @@ Sequencer::functionalWrite(Packet *func_pkt)
     int num_written = RubyPort::functionalWrite(func_pkt);
 
     for (const auto &table_entry : m_RequestTable) {
-        for (const auto *seq_req : table_entry.second) {
+        for (const auto seq_req : table_entry.second) {
             if (seq_req->functionalWrite(func_pkt))
                 ++num_written;
         }
@@ -357,7 +357,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
     int aliased_stores = 0;
     int aliased_loads = 0;
     while (!seq_req_list->empty()) {
-        SequencerRequest &seq_req = seq_req_list->front();
+        SequencerRequest *seq_req = seq_req_list->front();
         // We need to remove the request before the retry signal is sent in the
         // call of hitCallback, otherwise the retry request could find itself
         // aliased with the current request, causing a failed retry (if the
@@ -405,7 +405,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             }
 
             if (ruby_request) {
-                recordMissLatency(&seq_req, success, mach, externalHit,
+                recordMissLatency(seq_req, success, mach, externalHit,
                                   initialRequestTime, forwardRequestTime,
                                   firstResponseTime);
             } else {
@@ -413,7 +413,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             }
             markRemoved();
             ruby_request = false;
-            hitCallback(&seq_req, data, success, mach, externalHit,
+            hitCallback(seq_req, data, success, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
                         firstResponseTime);
         } else {
@@ -422,7 +422,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             markRemoved();
             ruby_request = false;
             aliased_loads++;
-            hitCallback(&seq_req, data, true, mach, externalHit,
+            hitCallback(seq_req, data, true, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
                         firstResponseTime);
         }
@@ -484,13 +484,13 @@ Sequencer::readCallback(Addr address, DataBlock& data,
             break;
         }
         if (ruby_request) {
-            recordMissLatency(&seq_req, true, mach, externalHit,
+            recordMissLatency(seq_req, true, mach, externalHit,
                               initialRequestTime, forwardRequestTime,
                               firstResponseTime);
         }
         seq_req_list->pop_front();
         bool lastReq = seq_req_list->empty();
-        hitCallback(&seq_req, data, true, mach, externalHit,
+        hitCallback(seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
                     firstResponseTime);
         markRemoved();
