@@ -45,6 +45,7 @@ from m5.objects import *
 
 from common.Benchmarks import *
 from common import ObjectList
+from common import CacheConfig
 
 vio_9p_help = """\
 Enable the Virtio 9P device and set the path to share. The default 9p path is

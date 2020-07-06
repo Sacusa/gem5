@@ -190,4 +190,12 @@ def config_mem(options, system):
             # each vault. All vaults are same size.
             subsystem.mem_ctrls[i].device_size = options.hmc_dev_vault_size
         else:
-            subsystem.mem_ctrls[i].port = xbar.master
+            if options.record_dram_traffic:
+                monitor = CommMonitor()
+                monitor.trace = MemTraceProbe(trace_file="dram_%d.trc.gz" % i)
+                xbar.master = monitor.slave
+                monitor.master = subsystem.mem_ctrls[i].port
+                monitor_name = "dram_%d_monitor" % i
+                setattr(subsystem, monitor_name, monitor)
+            else:
+                subsystem.mem_ctrls[i].port = xbar.master

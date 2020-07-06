@@ -48,6 +48,9 @@ from m5.objects import *
 from common.Caches import *
 from common import ObjectList
 
+def prefetcher_names():
+    return ["tagged", "ghb", "stride"]
+
 def config_cache(options, system):
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
@@ -77,8 +80,25 @@ def config_cache(options, system):
         dcache_class, icache_class, l2_cache_class, walk_cache_class = \
             core.HPI_DCache, core.HPI_ICache, core.HPI_L2, core.HPI_WalkCache
     else:
-        dcache_class, icache_class, l2_cache_class, walk_cache_class = \
-            L1_DCache, L1_ICache, L2Cache, None
+        if options.enable_prefetchers:
+            if options.prefetcher_type == "stride":
+                # We still set the instruction prefetcher with a tagged
+                # prefetcher since instructions are usually fetched
+                # sequentially.
+                dcache_class, icache_class, l2_cache_class, walk_cache_class = \
+                    L1StridePrefetchCache, L1TaggedPrefetchCache, \
+                    L2StridePrefetchCache, None
+            else:
+                # Default prefetcher: tagged
+                dcache_class, icache_class, l2_cache_class, walk_cache_class = \
+                    L1TaggedPrefetchCache, L1TaggedPrefetchCache, \
+                    L2StridePrefetchCache, None
+                # There is a known issue with LLC w/ tagged prefetcher in gem5
+                # (https://www.mail-archive.com/gem5-users@gem5.org/msg10439.html)
+                # For now we always use strided prefetcher for LLC.
+        else:
+            dcache_class, icache_class, l2_cache_class, walk_cache_class = \
+                L1Cache, L1Cache, L2Cache, None
 
         if buildEnv['TARGET_ISA'] in ['x86', 'riscv']:
             walk_cache_class = PageTableWalkerCache
@@ -95,13 +115,17 @@ def config_cache(options, system):
 
     if options.l2cache:
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
-        # are not connected using addTwoLevelCacheHierarchy. Use the
-        # same clock as the CPUs.
-        system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                   size=options.l2_size,
-                                   assoc=options.l2_assoc)
+        # are not connected using addTwoLevelCacheHierarchy. Use the system bus
+        # clock domain, and set the L1-to-L2 bus width to 32 bytes (256 bits).
+        l2cache_size = options.l2_size
+        system.l2 = l2_cache_class(clk_domain=system.clk_domain,
+                                   size=l2cache_size,
+                                   assoc=options.l2_assoc,
+                                   data_latency=options.l2_hit_latency,
+                                   tag_latency=options.l2_hit_latency,
+                                   response_latency=options.l2_hit_latency)
 
-        system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+        system.tol2bus = L2XBar(clk_domain = system.clk_domain)
         system.l2.cpu_side = system.tol2bus.master
         system.l2.mem_side = system.membus.slave
         if options.l2_hwp_type:
@@ -119,9 +143,15 @@ def config_cache(options, system):
     for i in range(options.num_cpus):
         if options.caches:
             icache = icache_class(size=options.l1i_size,
-                                  assoc=options.l1i_assoc)
+                                  assoc=options.l1i_assoc,
+                                  data_latency=options.l1i_hit_latency,
+                                  tag_latency=options.l1i_hit_latency,
+                                  response_latency=options.l1i_hit_latency)
             dcache = dcache_class(size=options.l1d_size,
-                                  assoc=options.l1d_assoc)
+                                  assoc=options.l1d_assoc,
+                                  data_latency=options.l1d_hit_latency,
+                                  tag_latency=options.l1d_hit_latency,
+                                  response_latency=options.l1d_hit_latency)
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -200,6 +230,36 @@ def config_cache(options, system):
             system.cpu[i].connectUncachedPorts(system.membus)
         else:
             system.cpu[i].connectAllPorts(system.membus)
+    
+    if options.accel_cfg_file:
+        aladdin_datapaths = system.find_all(HybridDatapath)[0]
+        for datapath in aladdin_datapaths:
+            # For now, we will connect all datapaths to a cache regardless of
+            # whether they are needed or not.
+            datapath.cache = dcache_class(
+                clk_domain=datapath.clk_domain,
+                size=str(datapath.cacheSize),
+                assoc=datapath.cacheAssoc,
+                data_latency=datapath.cacheHitLatency,
+                tag_latency=datapath.cacheHitLatency,
+                response_latency=datapath.cacheHitLatency)
+            # The ability for the accelerator to have an L2 cache has been removed
+            # for now. The original implementation of attaching the accelerator's
+            # dcache to the CPU's L2 cache is probably not what users would expect
+            # anyways.
+            datapath.addPrivateL1Dcache(system, system.membus)
+            datapath.connectPrivateScratchpad(system, system.membus)
+
+            if datapath.enableAcp:
+                assert(options.l2cache and "ACP requires an L2 cache!")
+                datapath.connectAcpPort(system.tol2bus)
+
+        systolic_arrays = system.find_all(SystolicArray)[0]
+        for systolic_array in systolic_arrays:
+            systolic_array.cache = dcache_class(
+                clk_domain=systolic_array.clk_domain, size="128B", assoc=1)
+            systolic_array.addPrivateL1Dcache(system, system.membus)
+            systolic_array.connectPrivateScratchpad(system, system.membus)
 
     return system
 

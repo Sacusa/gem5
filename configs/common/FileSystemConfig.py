@@ -76,7 +76,6 @@ def config_filesystem(system, options = None):
       - /proc/stat simply lists all CPUs
       - /sys/devices/system/cpu/online and /sys/devices/system/cpu/possible
         These files list all of the CPUs in this system.
-      - /tmp
 
     These files are created in the `fs` directory in the outdir path.
     """
