@@ -268,11 +268,11 @@ SyscallReturn dup2Func(SyscallDesc *desc, ThreadContext *tc,
 
 /// Target fcntl() handler.
 SyscallReturn fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
-                        int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs);
+                        int tgt_fd, int cmd, GuestABI::VarArgs<uint64_t> varargs);
 
 /// Target fcntl64() handler.
 SyscallReturn fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
-                          int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs);
+                          int tgt_fd, int cmd, GuestABI::VarArgs<uint64_t> varargs);
 
 // Aladdin handler function shared between 32-bit and 64-bit fcntl emulations.
 void fcntlAladdinHandler(Process *process, ThreadContext *tc,

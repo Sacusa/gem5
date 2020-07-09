@@ -726,8 +726,11 @@ fcntlAladdinHandler(Process *process, ThreadContext *tc,
 
     if (cmd == ALADDIN_MAP_ARRAY) {
         uint8_t* mapping_buf = new uint8_t[sizeof(aladdin_map_t)];
+        fprintf(stdout, "Step 1\n");
         memProxy.readBlob(params_ptr, mapping_buf, sizeof(aladdin_map_t));
+        fprintf(stdout, "Step 1\n");
         aladdin_map_t* mapping = reinterpret_cast<aladdin_map_t*>(mapping_buf);
+        fprintf(stdout, "Step 1\n");
         void* addr = nullptr;
         void* array_name_addr = nullptr;
         unsigned request_code = mapping->request_code;;
@@ -744,6 +747,8 @@ fcntlAladdinHandler(Process *process, ThreadContext *tc,
         Addr sim_base_addr = reinterpret_cast<Addr>(addr);
         inform("Received mapping for array %s at vaddr %x of length %d.\n",
                array_name, sim_base_addr, size);
+
+        fprintf(stdout, "Step 2\n");
 
         // TODO: Do we need to delete past mappings of the same array? Would it
         // cause issues if we don't?
@@ -763,6 +768,8 @@ fcntlAladdinHandler(Process *process, ThreadContext *tc,
                 sim_base_addr + i * TheISA::PageBytes,  // Simulated vaddr.
                 paddr);                                 // Simulated paddr.
         }
+
+        fprintf(stdout, "Step 3\n");
 
         delete mapping_buf;
         delete string_buf;
@@ -793,13 +800,14 @@ fcntlAladdinHandler(Process *process, ThreadContext *tc,
 
 SyscallReturn
 fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
-          int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs)
+          int tgt_fd, int cmd, GuestABI::VarArgs<uint64_t> varargs)
 {
     auto p = tc->getProcessPtr();
 
     if (tgt_fd == ALADDIN_FD) {
         // TODO: should be varargs.get<Addr>()
-        fcntlAladdinHandler(p, tc, cmd, varargs.get<int>());
+        fprintf(stdout, "Calling Aladdin's fcntl handler\n");
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<uint64_t>());
         return 0;
     }
 
@@ -815,7 +823,7 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
         return coe & FD_CLOEXEC;
 
       case F_SETFD: {
-        int arg = varargs.get<int>();
+        int arg = varargs.get<uint64_t>();
         arg ? hbfdp->setCOE(true) : hbfdp->setCOE(false);
         return 0;
       }
@@ -828,7 +836,7 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
       // subsequent fcntls.
       case F_GETFL:
       case F_SETFL: {
-        int arg = varargs.get<int>();
+        int arg = varargs.get<uint64_t>();
         int rv = fcntl(sim_fd, cmd, arg);
         return (rv == -1) ? -errno : rv;
       }
@@ -841,13 +849,14 @@ fcntlFunc(SyscallDesc *desc, ThreadContext *tc,
 
 SyscallReturn
 fcntl64Func(SyscallDesc *desc, ThreadContext *tc,
-            int tgt_fd, int cmd, GuestABI::VarArgs<int> varargs)
+            int tgt_fd, int cmd, GuestABI::VarArgs<uint64_t> varargs)
 {
     auto p = tc->getProcessPtr();
 
     if (cmd == ALADDIN_FD) {
         // TODO: should be varargs.get<Addr>()
-        fcntlAladdinHandler(p, tc, cmd, varargs.get<int>());
+        fprintf(stdout, "Calling Aladdin's fcntl64 handler\n");
+        fcntlAladdinHandler(p, tc, cmd, varargs.get<uint64_t>());
         return 0;
     }
 
