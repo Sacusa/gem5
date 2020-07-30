@@ -1,2 +1,2 @@
 #!/bin/bash
-scons build/X86/gem5.opt -j 8
+scons build/X86/gem5.opt -j 2

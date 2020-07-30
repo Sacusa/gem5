@@ -136,12 +136,7 @@ namespace X86ISA {
     }  // namespace CpuidCacheParams
 
     static const int vendorStringSize = 13;
-
-#ifdef USE_M5_CPUID_VENDOR_STRING
     static const char vendorString[vendorStringSize] = "M5 Simulator";
-#else
-    static const char vendorString[vendorStringSize] = "GenuineIntel";
-#endif
     static const int nameStringSize = 48;
     static const char nameString[nameStringSize] = "Fake M5 x86_64 CPU";
 
@@ -271,7 +266,7 @@ namespace X86ISA {
                 // several instructions (palign) used by strcmp_ssse3, which
                 // can cause code to take the wrong path.
                 result = CpuidResult(0x00020f51, 0x00000805,
-                                     0xe7dbfbff, 0x00000209);
+                                     0xe7dbfbff, 0x04000009);
                 break;
               case CacheParams:
                 result = getCacheParameters(tc, index);

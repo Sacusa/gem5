@@ -230,7 +230,8 @@ def config_cache(options, system):
             system.cpu[i].connectUncachedPorts(system.membus)
         else:
             system.cpu[i].connectAllPorts(system.membus)
-    
+
+    '''
     if options.accel_cfg_file:
         aladdin_datapaths = system.find_all(HybridDatapath)[0]
         for datapath in aladdin_datapaths:
@@ -260,6 +261,7 @@ def config_cache(options, system):
                 clk_domain=systolic_array.clk_domain, size="128B", assoc=1)
             systolic_array.addPrivateL1Dcache(system, system.membus)
             systolic_array.connectPrivateScratchpad(system, system.membus)
+    '''
 
     return system
 
