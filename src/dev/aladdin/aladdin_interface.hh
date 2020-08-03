@@ -18,15 +18,14 @@ class AladdinInterface : public BasicPioDevice
         return dynamic_cast<const Params *>(_params);
     }
 
-    AladdinInterface(Params *p) : BasicPioDevice(p, 1), latency(p->pio_latency)
+    AladdinInterface(Params *p) : BasicPioDevice(p, 8),
+        latency(p->pio_latency)
     {
         std::cout << "Created a new AladdinInterface object" << std::endl;
     }
 
     Tick read(PacketPtr pkt) override;
-
     Tick write(PacketPtr pkt) override;
-
     AddrRangeList getAddrRanges() const override;
 };
 

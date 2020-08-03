@@ -337,7 +337,7 @@ else:
 np = options.num_cpus
 
 test_sys = build_test_system(np)
-test_sys.aladdin_interface = AladdinInterface(pio_addr = 0x0C0000000)
+test_sys.aladdin_interface = AladdinInterface(pio_addr=x86IOAddress(0xe000))
 test_sys.aladdin_interface.pio = test_sys.membus.master
 
 if len(bm) == 2:

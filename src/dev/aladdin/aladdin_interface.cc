@@ -8,7 +8,6 @@
 Tick AladdinInterface::read(PacketPtr pkt)
 {
     assert(pkt->getAddr() == pioAddr);
-    assert(pkt->getSize() == 1);
     DPRINTF(AladdinInterface, "Reading from aladdin device\n");
     pkt->makeAtomicResponse();
     return latency;
@@ -17,7 +16,6 @@ Tick AladdinInterface::read(PacketPtr pkt)
 Tick AladdinInterface::write(PacketPtr pkt)
 {
     assert(pkt->getAddr() == pioAddr);
-    assert(pkt->getSize() == 1);
     DPRINTF(AladdinInterface, "Writing to aladdin device\n");
     pkt->makeAtomicResponse();
     return latency;

@@ -427,8 +427,10 @@ def connectX86ClassicSystem(x86_sys, numCPUs):
     #  4) then the entire PCI address space and beyond.
     x86_sys.bridge.ranges = \
         [
-        AddrRange(0xC0000004, 0xFFFF0000),
+        AddrRange(0xC0000000, 0xFFFF0000),
         AddrRange(IO_address_space_base,
+                  IO_address_space_base + 0x0dfff),
+        AddrRange(IO_address_space_base + 0x0e000 + 8,
                   interrupts_address_space_base - 1),
         AddrRange(pci_config_address_space_base,
                   Addr.max)
